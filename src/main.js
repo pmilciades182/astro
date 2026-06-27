@@ -9,6 +9,7 @@ import { setupLighting, createMapLights } from './lighting.js';
 import { loadWeapon } from './weapon.js';
 import { createLasers } from './projectiles.js';
 import { createSparks } from './particles.js';
+import { createEnemies } from './enemies.js';
 
 // ─── Renderer ───────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -51,8 +52,15 @@ const lasers = createLasers(scene, isWall);
 const sparks = createSparks(scene);
 const _fwd = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
+const _deathUp = new THREE.Vector3(0, 1, 0);
 
-let mapNumber = 1;   // contador de mapas completados
+let mapNumber = 1;   // contador de mapas completados (= nivel del mapa)
+
+// Enemigos: se reparten por los pasillos tras generar cada mapa. Al morir,
+// fogonazo de partículas en su posición.
+const enemies = createEnemies(scene, { getGroundHeight, isWall }, {
+  onKill: (pos) => sparks.burst(pos, _deathUp, 22),
+});
 
 // Colisión contra muros: bloquea el movimiento por eje si el destino (con un
 // radio alrededor del jugador) cae en una celda-muro.
@@ -83,6 +91,7 @@ function nextMap() {
   applyMap();
   mapNumber++;
   spawnAtStart();
+  enemies.populate(world.map, mapNumber);   // nivel del mapa superior → enemigos más fuertes
 }
 
 // ─── Player state ───────────────────────────────────────────────────────────
@@ -110,9 +119,10 @@ scene.add(player.mesh);
 lights.playerLight.position.set(0, 3.2, 0);
 player.mesh.add(lights.playerLight);
 
-// Primer mapa: niebla, minimapa, luces y spawn en A
+// Primer mapa: niebla, minimapa, luces, spawn en A y enemigos
 applyMap();
 spawnAtStart();
+enemies.populate(world.map, mapNumber);
 
 // Temporales reutilizables para orientar al jugador según la pendiente (sin GC)
 const _up        = new THREE.Vector3(0, 1, 0);
@@ -303,6 +313,7 @@ function update(dt) {
     const side = player.punchSide;
     player.punchSide = side === 'left' ? 'right' : 'left';
     playUpperBody(`characterarmature|punch_${side}`, () => { player.isMeleeAttacking = false; });
+    enemies.meleeStrike(player.mesh.position, player.facing);   // golpe → muerte de un golpe
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -319,6 +330,13 @@ function update(dt) {
     player.shootCadence = SHOOT_INTERVAL;
     playUpperBody('characterarmature|gun_shoot');   // relanza el swing del brazo en cada disparo
 
+    // Auto-apuntado: si hay un enemigo dentro del rango, encara y dispara hacia él
+    // (facilita el run & shoot). Si no, dispara según el frente actual.
+    const AIM_RANGE = 22;
+    const target = enemies.nearest(player.mesh.position.x, player.mesh.position.z, AIM_RANGE);
+    if (target) {
+      player.facing = Math.atan2(target.x - player.mesh.position.x, target.z - player.mesh.position.z);
+    }
     // Dirección de apuntado (frente = +Z local del modelo)
     _fwd.set(Math.sin(player.facing), 0, Math.cos(player.facing));
     // Origen = boca real del arma (posición mundial del arma), no un offset
@@ -435,6 +453,10 @@ function update(dt) {
   // Láseres (avance + rebote en muros) y chispas del disparo
   lasers.update(dt);
   sparks.update(dt);
+
+  // Enemigos: persecución/flotación + colisión con láseres (mueren de un tiro)
+  enemies.update(dt, player);
+  enemies.handleLasers(lasers);
 
   // Muros que tapan al jugador → semitransparentes (oclusión de cámara).
   // Apuntamos al torso (no a los pies) para detectar bien lo que cubre.

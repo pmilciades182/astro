@@ -97,5 +97,9 @@ export function createLasers(scene, isWall) {
   const setLifetime = (s) => { lifetime = s; };
   const addLifetime = (d) => { lifetime += d; };
 
-  return { spawn, update, setLifetime, addLifetime, get lifetime() { return lifetime; } };
+  // Para colisión con enemigos: balas activas y desactivación al impactar
+  const getActive = () => pool.filter((b) => b.userData.active);
+  const deactivate = (g) => { g.userData.active = false; g.visible = false; };
+
+  return { spawn, update, setLifetime, addLifetime, getActive, deactivate, get lifetime() { return lifetime; } };
 }
