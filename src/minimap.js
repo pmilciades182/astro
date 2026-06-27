@@ -31,8 +31,8 @@ export function createMinimap() {
   Object.assign(label.style, {
     position: 'absolute', top: '-2px', left: '12px',
     transform: 'translateY(-50%)',
-    font: 'bold 11px "Segoe UI", sans-serif', letterSpacing: '2px',
-    color: '#bcd0ff', background: 'rgba(8,10,22,0.95)', padding: '1px 8px',
+    font: '700 11px "Orbitron", "Segoe UI", sans-serif', letterSpacing: '3px',
+    color: '#bcd0ff', background: 'rgba(8,10,22,0.95)', padding: '2px 9px',
     borderRadius: '6px',
   });
   wrap.appendChild(label);

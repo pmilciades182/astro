@@ -7,10 +7,13 @@ import { createMinimap } from './minimap.js';
 import { createFogOfWar } from './fogOfWar.js';
 import { setupLighting, createMapLights } from './lighting.js';
 import { loadWeapon } from './weapon.js';
+import { createLasers } from './projectiles.js';
+import { createSparks } from './particles.js';
 
 // ─── Renderer ───────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(window.devicePixelRatio);
+// MSAA activo + pixel ratio limitado a 2: bordes nítidos sin sobre-render en 4K
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -42,6 +45,12 @@ const mapLights = createMapLights(scene, getGroundHeight);
 // Niebla de guerra + minimapa (oculto hasta pulsar el botón abajo)
 const fog = createFogOfWar();
 const minimap = createMinimap();
+
+// Láseres del jugador (rebotan en muros, munición infinita)
+const lasers = createLasers(scene, isWall);
+const sparks = createSparks(scene);
+const _fwd = new THREE.Vector3();
+const _muzzle = new THREE.Vector3();
 
 let mapNumber = 1;   // contador de mapas completados
 
@@ -111,6 +120,8 @@ const _normal    = new THREE.Vector3();
 const _tiltQuat  = new THREE.Quaternion();
 const _yawQuat   = new THREE.Quaternion();
 const _targetQ   = new THREE.Quaternion();
+const _occTarget = new THREE.Vector3();
+const _occHead   = new THREE.Vector3(0, 1.4, 0);
 
 // ─── Load GLB ───────────────────────────────────────────────────────────────
 const loader = new GLTFLoader();
@@ -307,6 +318,20 @@ function update(dt) {
   if (shootHeld && player.shootCadence <= 0) {
     player.shootCadence = SHOOT_INTERVAL;
     playUpperBody('characterarmature|gun_shoot');   // relanza el swing del brazo en cada disparo
+
+    // Dirección de apuntado (frente = +Z local del modelo)
+    _fwd.set(Math.sin(player.facing), 0, Math.cos(player.facing));
+    // Origen = boca real del arma (posición mundial del arma), no un offset
+    // centrado: así no se desplaza al rotar el personaje. Fallback si aún no carga.
+    if (player.weapon) {
+      player.weapon.getWorldPosition(_muzzle);
+      _muzzle.addScaledVector(_fwd, 0.5);   // un poco al frente, hacia la punta del cañón
+    } else {
+      _muzzle.copy(player.mesh.position).addScaledVector(_fwd, 1.1);
+      _muzzle.y += 1.1;
+    }
+    lasers.spawn(_muzzle, _fwd);
+    sparks.burst(_muzzle, _fwd);   // fogonazo de partículas
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -406,6 +431,15 @@ function update(dt) {
   const targetCamPos = player.mesh.position.clone().add(CAM_OFFSET);
   camera.position.lerp(targetCamPos, 8 * dt);
   camera.lookAt(player.mesh.position.clone().add(new THREE.Vector3(0, 1.5, 0)));
+
+  // Láseres (avance + rebote en muros) y chispas del disparo
+  lasers.update(dt);
+  sparks.update(dt);
+
+  // Muros que tapan al jugador → semitransparentes (oclusión de cámara).
+  // Apuntamos al torso (no a los pies) para detectar bien lo que cubre.
+  _occTarget.copy(player.mesh.position).add(_occHead);
+  world.updateOcclusion(camera, _occTarget);
 
   // Sombra sigue al jugador
   lights.dir.target.position.copy(player.mesh.position);

@@ -4,80 +4,109 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Astro Dungeons</title>
+
+  <!-- Fuentes espaciales: Orbitron (mecánica) + Audiowide (redondeada, amigable) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Audiowide&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet" />
+
   <style>
+    :root {
+      --cyan: #43e0ff;
+      --panel: rgba(10, 16, 34, 0.72);
+      --panel-edge: rgba(80, 200, 255, 0.55);
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { overflow: hidden; background: #0a0a1a; }
+    body { overflow: hidden; background: #070b18; }
     canvas { display: block; }
 
+    /* ── Título del juego (esquina superior izquierda) ───────────────────── */
+    #title {
+      position: fixed; top: 14px; left: 18px;
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: 22px; letter-spacing: 3px;
+      color: #eaf6ff;
+      text-shadow: 0 0 10px rgba(67,224,255,0.8), 0 2px 0 #0a3050;
+      pointer-events: none; user-select: none;
+    }
+    #title span { color: var(--cyan); }
+
+    /* ── Estado del gamepad ──────────────────────────────────────────────── */
+    #controller-status {
+      position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+      font-family: 'Orbitron', sans-serif; font-weight: 500;
+      font-size: 11px; letter-spacing: 1px;
+      color: #cfe6ff;
+      background: var(--panel);
+      border: 2px solid var(--panel-edge);
+      padding: 6px 14px; border-radius: 999px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+      pointer-events: none; user-select: none;
+    }
+    #controller-status.connected { color: #5dffa0; border-color: rgba(93,255,160,0.6); }
+    #controller-status.disconnected { color: #ff6b6b; border-color: rgba(255,107,107,0.5); }
+
+    /* ── HUD inferior (estilo Nintendo: chunky, redondeado, alto contraste) ─ */
     #hud {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
+      position: fixed; bottom: 22px; left: 50%;
       transform: translateX(-50%);
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      color: #fff;
-      font-family: 'Segoe UI', sans-serif;
-      font-size: 13px;
-      background: rgba(0,0,0,0.55);
-      padding: 10px 20px;
-      border-radius: 12px;
-      pointer-events: none;
-      user-select: none;
+      display: flex; gap: 18px; align-items: center;
+      padding: 12px 22px;
+      background: var(--panel);
+      border: 2px solid var(--panel-edge);
+      border-radius: 20px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.5),
+                  inset 0 1px 0 rgba(255,255,255,0.08),
+                  0 0 24px rgba(67,224,255,0.15);
+      backdrop-filter: blur(6px);
+      pointer-events: none; user-select: none;
     }
     .hud-btn {
-      display: flex;
-      align-items: center;
-      gap: 5px;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      font-family: 'Audiowide', sans-serif;
+      font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
+      color: #bcd6f5; text-align: center; line-height: 1.15; max-width: 64px;
     }
-    .btn {
-      width: 22px; height: 22px;
-      border-radius: 50%;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      font-weight: bold;
-      color: #000;
+    /* Badges redondos tipo botón de consola */
+    .btn, .stick {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; border-radius: 50%;
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      font-size: 12px; color: #06121f;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 3px 0 rgba(0,0,0,0.45), inset 0 2px 3px rgba(255,255,255,0.45);
     }
-    .btn-a { background: #3ddc84; }
-    .btn-b { background: #f04040; }
-    .btn-x { background: #4090f0; }
-    .btn-y { background: #f0c020; }
-    .btn-rt { background: #ccc; font-size: 9px; border-radius: 6px; width: 28px; padding: 0 2px; }
-    .btn-lt { background: #ccc; font-size: 9px; border-radius: 6px; width: 28px; padding: 0 2px; }
-    .btn-lb { background: #ccc; font-size: 9px; border-radius: 6px; width: 28px; padding: 0 2px; }
-    .stick { background: #888; border-radius: 50%; width: 22px; height: 22px; font-size: 9px; display: inline-flex; align-items: center; justify-content: center; color: #fff; }
-    #controller-status {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      color: #fff;
-      font-family: 'Segoe UI', sans-serif;
-      font-size: 12px;
-      background: rgba(0,0,0,0.5);
-      padding: 6px 14px;
-      border-radius: 8px;
-      pointer-events: none;
+    .btn-a { background: #4ee37a; }     /* verde */
+    .btn-b { background: #ff5a5a; }     /* rojo */
+    .btn-x { background: #4a9cff; }     /* azul */
+    .btn-y { background: #ffd23e; }     /* amarillo */
+    /* Gatillos/bumpers: forma de pastilla */
+    .btn-rt, .btn-lt, .btn-lb {
+      width: 38px; border-radius: 10px; font-size: 11px;
+      background: linear-gradient(#eef4fb, #c2d2e4); color: #16263a;
     }
-    #controller-status.connected { color: #3ddc84; }
-    #controller-status.disconnected { color: #f04040; }
+    .stick {
+      background: radial-gradient(circle at 35% 30%, #8aa0bd, #3d506e);
+      color: #fff; font-size: 11px;
+    }
   </style>
 </head>
 <body>
+  <div id="title">ASTRO<span>DUNGEONS</span></div>
   <div id="controller-status" class="disconnected">⬛ Gamepad: desconectado</div>
+
   <div id="hud">
-    <div class="hud-btn"><span class="stick">L</span> Mover</div>
-    <div class="hud-btn"><span class="btn btn-a">A</span> Cuerpo a cuerpo</div>
-    <div class="hud-btn"><span class="btn btn-rt">RT</span> Ataque distancia</div>
-    <div class="hud-btn"><span class="stick">R3</span> Roll</div>
-    <div class="hud-btn"><span class="btn btn-lb">LB</span> Curar</div>
-    <div class="hud-btn"><span class="btn btn-x">X</span> Objeto 1</div>
-    <div class="hud-btn"><span class="btn btn-y">Y</span> Objeto 2</div>
-    <div class="hud-btn"><span class="btn btn-b">B</span> Objeto 3</div>
-    <div class="hud-btn"><span class="stick">▼</span> Mapa</div>
+    <div class="hud-btn"><span class="stick">L</span>Mover</div>
+    <div class="hud-btn"><span class="btn btn-a">A</span>Cuerpo</div>
+    <div class="hud-btn"><span class="btn btn-rt">RT</span>Disparo</div>
+    <div class="hud-btn"><span class="stick">R3</span>Roll</div>
+    <div class="hud-btn"><span class="btn btn-lb">LB</span>Curar</div>
+    <div class="hud-btn"><span class="btn btn-x">X</span>Objeto 1</div>
+    <div class="hud-btn"><span class="btn btn-y">Y</span>Objeto 2</div>
+    <div class="hud-btn"><span class="btn btn-b">B</span>Objeto 3</div>
+    <div class="hud-btn"><span class="stick">▼</span>Mapa</div>
   </div>
+
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
