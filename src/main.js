@@ -8,7 +8,7 @@ import { createFogOfWar } from './fogOfWar.js';
 import { setupLighting, createMapLights } from './lighting.js';
 import { loadWeapon } from './weapon.js';
 import { createLasers } from './projectiles.js';
-import { createSparks } from './particles.js';
+import { createSparks, createBlood } from './particles.js';
 import { createEnemies } from './enemies.js';
 
 // ─── Renderer ───────────────────────────────────────────────────────────────
@@ -50,8 +50,10 @@ const minimap = createMinimap();
 // Láseres del jugador (rebotan en muros, munición infinita)
 const lasers = createLasers(scene, isWall);
 const sparks = createSparks(scene);
+const blood = createBlood(scene);   // salpicaduras de sangre para golpes melee
 const _fwd = new THREE.Vector3();
 const _muzzle = new THREE.Vector3();
+const _impactPt = new THREE.Vector3();
 const _deathUp = new THREE.Vector3(0, 1, 0);
 
 let mapNumber = 1;   // contador de mapas completados (= nivel del mapa)
@@ -60,6 +62,11 @@ let mapNumber = 1;   // contador de mapas completados (= nivel del mapa)
 // fogonazo de partículas en su posición.
 const enemies = createEnemies(scene, { getGroundHeight, isWall }, {
   onKill: (pos) => sparks.burst(pos, _deathUp, 22),
+  // Salpicadura de sangre sobre el jugador cuando un enemigo lo alcanza (punch/kick)
+  onHitPlayer: () => {
+    _impactPt.set(player.mesh.position.x, player.mesh.position.y + 1.2, player.mesh.position.z);
+    blood.burst(_impactPt, 14);
+  },
 });
 
 // Colisión contra muros: bloquea el movimiento por eje si el destino (con un
@@ -313,7 +320,11 @@ function update(dt) {
     const side = player.punchSide;
     player.punchSide = side === 'left' ? 'right' : 'left';
     playUpperBody(`characterarmature|punch_${side}`, () => { player.isMeleeAttacking = false; });
-    enemies.meleeStrike(player.mesh.position, player.facing);   // golpe → muerte de un golpe
+    // Salpicadura de sangre solo en cada enemigo realmente golpeado
+    enemies.meleeStrike(player.mesh.position, player.facing, (x, y, z) => {
+      _impactPt.set(x, y + 1.2, z);
+      blood.burst(_impactPt, 18);
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -333,7 +344,8 @@ function update(dt) {
     // Auto-apuntado: si hay un enemigo dentro del rango, encara y dispara hacia él
     // (facilita el run & shoot). Si no, dispara según el frente actual.
     const AIM_RANGE = 22;
-    const target = enemies.nearest(player.mesh.position.x, player.mesh.position.z, AIM_RANGE);
+    const AIM_CONE = Math.PI / 6;   // ±30° al frente: no auto-apunta hacia atrás
+    const target = enemies.nearest(player.mesh.position.x, player.mesh.position.z, AIM_RANGE, player.facing, AIM_CONE);
     if (target) {
       player.facing = Math.atan2(target.x - player.mesh.position.x, target.z - player.mesh.position.z);
     }
@@ -380,6 +392,10 @@ function update(dt) {
   // ────────────────────────────────────────────────────────────────────────────
   if (gamepad.justPressed(13) || keys['KeyM'] && !player._mPrev) minimap.toggle();
   player._mPrev = keys['KeyM'];
+
+  // P — Debug: mostrar/ocultar líneas de visión de los enemigos
+  if (keys['KeyP'] && !player._pPrev) enemies.toggleDebug();
+  player._pPrev = keys['KeyP'];
 
   // ────────────────────────────────────────────────────────────────────────────
   // X/Y/B — Usar objetos 1/2/3  (keyboard: 1/2/3) — cosmético
@@ -457,6 +473,7 @@ function update(dt) {
   // Enemigos: persecución/flotación + colisión con láseres (mueren de un tiro)
   enemies.update(dt, player);
   enemies.handleLasers(lasers);
+  blood.update(dt);   // salpicaduras de sangre de golpes melee
 
   // Muros que tapan al jugador → semitransparentes (oclusión de cámara).
   // Apuntamos al torso (no a los pies) para detectar bien lo que cubre.
