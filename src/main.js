@@ -94,12 +94,35 @@ const _impactPt = new THREE.Vector3();
 const _deathUp = new THREE.Vector3(0, 1, 0);
 
 let mapNumber = 1;       // contador de mapas completados (= nivel del mapa)
-let openingChests = [];  // cofres recién robados, animando su cierre/hundimiento
+let openingChests = [];  // cofres/pociones recién recogidos, animando su desaparición
+let potions = [];        // pociones de vida caídas, pendientes de recoger
+
+// Poción de vida: pequeño vial que un enemigo puede soltar al morir (10%).
+// Cuelga del grupo del dungeon → se limpia sola al regenerar/cambiar de realidad.
+const potionMat = new THREE.MeshToonMaterial({
+  color: 0xff5a7a, emissive: 0xff2d55, emissiveIntensity: 0.85, transparent: true, opacity: 0.92,
+});
+function dropPotion(x, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.46, 10), potionMat);
+  body.position.y = 0.32;
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), potionMat);
+  cap.position.y = 0.56;
+  g.add(body, cap);
+  g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  g.position.set(x, getGroundHeight(x, z), z);
+  world.addToDungeon(g);
+  potions.push({ mesh: g, x, z });
+}
 
 // Enemigos: se reparten por los pasillos tras generar cada mapa. Al morir,
-// fogonazo de partículas en su posición.
+// fogonazo de partículas en su posición y 10% de soltar una poción de vida.
+const POTION_DROP_CHANCE = 0.10;
 const enemies = createEnemies(scene, { getGroundHeight, isWall }, {
-  onKill: (pos) => sparks.burst(pos, _deathUp, 22),
+  onKill: (pos) => {
+    sparks.burst(pos, _deathUp, 22);
+    if (Math.random() < POTION_DROP_CHANCE) dropPotion(pos.x, pos.z);
+  },
   // Golpe enemigo (punch/kick): sangre siempre, daño real con i-frames
   onHitPlayer: (dmg) => {
     _impactPt.set(player.mesh.position.x, player.mesh.position.y + 1.2, player.mesh.position.z);
@@ -137,7 +160,8 @@ function spawnAtStart() {
 
 // Genera el siguiente mapa y reposiciona al jugador en su nuevo A
 function nextMap() {
-  world.generate();
+  world.generate();   // también descarta cualquier poción sin recoger del mapa anterior
+  potions = [];
   applyMap();
   mapNumber++;
   spawnAtStart();
@@ -151,6 +175,7 @@ function enterDungeon() {
   game.invuln = 0;
   mapNumber = 1;
   world.generate();
+  potions = [];
   applyMap();
   spawnAtStart();
   enemies.populate(world.map, mapNumber);
@@ -544,6 +569,19 @@ function update(dt) {
         updateHUD();
         openingChests.push({ mesh: ch.mesh, t: 0.45 });
         sparks.burst(new THREE.Vector3(ch.x, getGroundHeight(ch.x, ch.z) + 0.9, ch.z), _deathUp, 26);
+      }
+    }
+
+    // Pociones de vida caídas: recuperan 1 corazón al recogerlas (si no está lleno)
+    for (let i = potions.length - 1; i >= 0; i--) {
+      const p = potions[i];
+      const pdx = player.mesh.position.x - p.x;
+      const pdz = player.mesh.position.z - p.z;
+      if (pdx * pdx + pdz * pdz < 1.6 * 1.6) {
+        if (game.hp < MAX_HP) { game.hp++; updateHUD(); }
+        openingChests.push({ mesh: p.mesh, t: 0.35 });
+        sparks.burst(new THREE.Vector3(p.x, getGroundHeight(p.x, p.z) + 0.7, p.z), _deathUp, 18);
+        potions.splice(i, 1);
       }
     }
   } else if (game.state === 'ship') {

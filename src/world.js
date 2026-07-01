@@ -565,12 +565,20 @@ export function setupWorld(scene) {
     groundMesh.visible = v;
   }
 
+  // Añade un objeto (p. ej. una poción soltada por un enemigo) al grupo del
+  // dungeon: así se oculta/limpia solo, junto con todo lo demás, al viajar a
+  // otra realidad o regenerar el mapa.
+  function addToDungeon(obj) {
+    dungeon.add(obj);
+  }
+
   return {
     getGroundHeight: groundY,
     isWall,
     generate: generateDungeon,
     updateOcclusion,
     setVisible,
+    addToDungeon,
     get map() { return mapData; },
   };
 }
