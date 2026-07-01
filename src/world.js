@@ -5,7 +5,7 @@ import { makeWallTextures, makeMetalTexture, getSignTexture, randomSignMessage }
 
 export function setupWorld(scene) {
   // Suelo procedural (relieve + textura espacial) y sampler de altura.
-  const { groundY } = createTerrain(scene);
+  const { groundY, mesh: groundMesh } = createTerrain(scene);
 
   // ── Dungeon procedural regenerable ────────────────────────────────────────
   // Grid de celdas; 1 = muro, 0 = piso. El anillo exterior queda como muro y
@@ -558,11 +558,19 @@ export function setupWorld(scene) {
 
   generateDungeon();
 
+  // Oculta/muestra todo el dungeon (muros, suelo, cofres...) — se usa al viajar
+  // entre la nave y las realidades, sin tener que destruir/reconstruir nada.
+  function setVisible(v) {
+    dungeon.visible = v;
+    groundMesh.visible = v;
+  }
+
   return {
     getGroundHeight: groundY,
     isWall,
     generate: generateDungeon,
     updateOcclusion,
+    setVisible,
     get map() { return mapData; },
   };
 }

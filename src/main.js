@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { setupWorld } from './world.js';
+import { createShip } from './ship.js';
 import { GamepadController } from './controls.js';
 import { addOutline, addRimGlow, pulseRim } from './characterShader.js';
 import { createMinimap } from './minimap.js';
@@ -39,6 +40,42 @@ camera.lookAt(0, 0, 0);
 const world = setupWorld(scene);
 const { getGroundHeight, isWall } = world;
 
+// La nave: hub seguro, lejos del dungeon (solo se alterna su visibilidad)
+const ship = createShip(scene);
+
+// ─── Estado del juego — lore: viajero interdimensional ──────────────────────
+// Vives en tu nave. Cada portal te lanza a una realidad distinta: roba su
+// maná (cofres) y alcanza la salida. Si caes en combate, lo pierdes todo y
+// reapareces en la nave. Escapa de REALITIES_TO_ESCAPE realidades seguidas
+// para volver a casa con tu botín.
+const REALITIES_TO_ESCAPE = 5;
+const MAX_HP = 3;
+const game = { state: 'ship', hp: MAX_HP, mana: 0, realities: 0, invuln: 0 };
+
+const hudHearts    = document.querySelectorAll('#hp-hearts .heart');
+const hudMana      = document.getElementById('mana-count');
+const hudRealities = document.getElementById('realities-count');
+const hudMessage   = document.getElementById('message');
+let messageTimer = null;
+
+function updateHUD() {
+  hudHearts.forEach((h, i) => h.classList.toggle('empty', i >= game.hp));
+  hudMana.textContent = game.mana;
+  hudRealities.textContent = `${game.realities}/${REALITIES_TO_ESCAPE}`;
+  ship.setMana(game.mana);
+}
+
+function showMessage(text, seconds = 2.5) {
+  hudMessage.textContent = text;
+  hudMessage.classList.add('show');
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => hudMessage.classList.remove('show'), seconds * 1000);
+}
+
+// Suelo/colisión activos según dónde esté el jugador (nave o realidad actual)
+function currentGroundY(x, z) { return game.state === 'ship' ? ship.groundY(x, z) : getGroundHeight(x, z); }
+function currentIsWall(x, z)  { return game.state === 'ship' ? ship.isWall(x, z)  : isWall(x, z); }
+
 // Iluminación (ambiente bajo + luz del jugador + luces por mapa)
 const lights = setupLighting(scene);
 const mapLights = createMapLights(scene, getGroundHeight);
@@ -56,16 +93,22 @@ const _muzzle = new THREE.Vector3();
 const _impactPt = new THREE.Vector3();
 const _deathUp = new THREE.Vector3(0, 1, 0);
 
-let mapNumber = 1;   // contador de mapas completados (= nivel del mapa)
+let mapNumber = 1;       // contador de mapas completados (= nivel del mapa)
+let openingChests = [];  // cofres recién robados, animando su cierre/hundimiento
 
 // Enemigos: se reparten por los pasillos tras generar cada mapa. Al morir,
 // fogonazo de partículas en su posición.
 const enemies = createEnemies(scene, { getGroundHeight, isWall }, {
   onKill: (pos) => sparks.burst(pos, _deathUp, 22),
-  // Salpicadura de sangre sobre el jugador cuando un enemigo lo alcanza (punch/kick)
-  onHitPlayer: () => {
+  // Golpe enemigo (punch/kick): sangre siempre, daño real con i-frames
+  onHitPlayer: (dmg) => {
     _impactPt.set(player.mesh.position.x, player.mesh.position.y + 1.2, player.mesh.position.z);
     blood.burst(_impactPt, 14);
+    if (game.invuln > 0) return;
+    game.invuln = 0.8;
+    game.hp -= dmg;
+    updateHUD();
+    if (game.hp <= 0) die();
   },
 });
 
@@ -74,8 +117,8 @@ const enemies = createEnemies(scene, { getGroundHeight, isWall }, {
 const PLAYER_RADIUS = 1.1;
 function blocked(x, z) {
   const r = PLAYER_RADIUS;
-  return isWall(x - r, z - r) || isWall(x + r, z - r) ||
-         isWall(x - r, z + r) || isWall(x + r, z + r);
+  return currentIsWall(x - r, z - r) || currentIsWall(x + r, z - r) ||
+         currentIsWall(x - r, z + r) || currentIsWall(x + r, z + r);
 }
 
 // Aplica el mapa actual a niebla, minimapa y luces (al iniciar y al regenerar)
@@ -101,6 +144,51 @@ function nextMap() {
   enemies.populate(world.map, mapNumber);   // nivel del mapa superior → enemigos más fuertes
 }
 
+// Pisar el portal de la nave: arranca una nueva incursión desde la realidad 1
+function enterDungeon() {
+  game.state = 'dungeon';
+  game.hp = MAX_HP;
+  game.invuln = 0;
+  mapNumber = 1;
+  world.generate();
+  applyMap();
+  spawnAtStart();
+  enemies.populate(world.map, mapNumber);
+  world.setVisible(true);
+  ship.setVisible(false);
+  updateHUD();
+}
+
+// Vuelve al jugador a la nave (por muerte o por escape) y limpia el dungeon
+function returnToShip() {
+  game.state = 'ship';
+  game.hp = MAX_HP;
+  game.invuln = 0;
+  enemies.clear();
+  world.setVisible(false);
+  ship.setVisible(true);
+  player.mesh.position.set(ship.spawn.x, 0, ship.spawn.z);
+  camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+}
+
+// Muerte: pierdes todo el maná robado y la racha de realidades, reapareces en la nave
+function die() {
+  game.mana = 0;
+  game.realities = 0;
+  returnToShip();
+  updateHUD();
+  showMessage('Has caído. Pierdes todo tu maná robado y despiertas en la nave.', 3);
+}
+
+// Escape: sobreviviste a REALITIES_TO_ESCAPE realidades seguidas, vuelves con tu botín
+function escape() {
+  const stolen = game.mana;
+  game.realities = 0;
+  returnToShip();
+  updateHUD();
+  showMessage(`¡Escapaste de vuelta a la nave con ${stolen} de maná robado!`, 3.5);
+}
+
 // ─── Player state ───────────────────────────────────────────────────────────
 const player = {
   mesh: new THREE.Group(),
@@ -113,8 +201,8 @@ const player = {
   isRangedAttacking: false, shootCadence: 0,
   // Roll — se activa con R3 (clic stick derecho)
   isRolling: false, rollTimer: 0, rollCooldown: 0,
-  // Items y UI (cosméticos, sin lógica de gameplay)
-  isHealing: false, healTimer: 0,
+  // Curación (LB) — restaura 1 vida real, con cooldown
+  isHealing: false, healTimer: 0, healCooldown: 0,
   mixer: null,
   actions: {},
   currentAction: null,
@@ -126,10 +214,13 @@ scene.add(player.mesh);
 lights.playerLight.position.set(0, 3.2, 0);
 player.mesh.add(lights.playerLight);
 
-// Primer mapa: niebla, minimapa, luces, spawn en A y enemigos
-applyMap();
-spawnAtStart();
-enemies.populate(world.map, mapNumber);
+// Estado inicial: el viajero despierta en su nave. El dungeon ya está
+// generado pero oculto; el primer viaje se activa al pisar el portal.
+world.setVisible(false);
+ship.setVisible(true);
+player.mesh.position.set(ship.spawn.x, 0, ship.spawn.z);
+camera.position.copy(player.mesh.position).add(CAM_OFFSET);
+updateHUD();
 
 // Temporales reutilizables para orientar al jugador según la pendiente (sin GC)
 const _up        = new THREE.Vector3(0, 1, 0);
@@ -297,6 +388,7 @@ function update(dt) {
   elapsed += dt;
   gamepad.update();
   const gp = gamepad.state;
+  game.invuln = Math.max(0, game.invuln - dt);   // i-frames tras recibir un golpe
 
   // ────────────────────────────────────────────────────────────────────────────
   // MOVIMIENTO — Left Stick / WASD
@@ -376,11 +468,17 @@ function update(dt) {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // LB — Curar  (keyboard: Q)
+  // LB — Curar (recupera 1 vida, con cooldown)  (keyboard: Q)
   // ────────────────────────────────────────────────────────────────────────────
-  if ((gamepad.justPressed(4) || keys['KeyQ']) && !player.isHealing) {
+  const HEAL_COOLDOWN = 4;
+  player.healCooldown = Math.max(0, player.healCooldown - dt);
+  if ((gamepad.justPressed(4) || keys['KeyQ']) && !player.isHealing &&
+      game.state === 'dungeon' && game.hp < MAX_HP && player.healCooldown <= 0) {
     player.isHealing = true;
     player.healTimer  = 0.6;
+    player.healCooldown = HEAL_COOLDOWN;
+    game.hp = Math.min(MAX_HP, game.hp + 1);
+    updateHUD();
   }
   if (player.isHealing) {
     player.healTimer -= dt;
@@ -423,13 +521,35 @@ function update(dt) {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // LLEGADA A B — completa el mapa y genera el siguiente
+  // LLEGADA A B (en una realidad) o AL PORTAL (en la nave)
   // ────────────────────────────────────────────────────────────────────────────
-  {
+  if (game.state === 'dungeon') {
     const b = world.map.exit;
     const dx = player.mesh.position.x - b.x;
     const dz = player.mesh.position.z - b.z;
-    if (dx * dx + dz * dz < 2.0 * 2.0) nextMap();
+    if (dx * dx + dz * dz < 2.0 * 2.0) {
+      game.realities++;
+      if (game.realities >= REALITIES_TO_ESCAPE) escape();
+      else { nextMap(); updateHUD(); }
+    }
+
+    // Cofres: robar su maná al pasar cerca (una vez por cofre)
+    for (const ch of world.map.chests) {
+      if (ch.opened) continue;
+      const cdx = player.mesh.position.x - ch.x;
+      const cdz = player.mesh.position.z - ch.z;
+      if (cdx * cdx + cdz * cdz < 1.8 * 1.8) {
+        ch.opened = true;
+        game.mana++;
+        updateHUD();
+        openingChests.push({ mesh: ch.mesh, t: 0.45 });
+        sparks.burst(new THREE.Vector3(ch.x, getGroundHeight(ch.x, ch.z) + 0.9, ch.z), _deathUp, 26);
+      }
+    }
+  } else if (game.state === 'ship') {
+    const dx = player.mesh.position.x - ship.portal.x;
+    const dz = player.mesh.position.z - ship.portal.z;
+    if (dx * dx + dz * dz < ship.portal.radius * ship.portal.radius) enterDungeon();
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -437,17 +557,17 @@ function update(dt) {
   // Muestrea la altura bajo el jugador (planta los pies) y las alturas vecinas
   // para estimar la normal del terreno e inclinar el cuerpo en las cuestas.
   // ────────────────────────────────────────────────────────────────────────────
-  if (getGroundHeight) {
+  {
     const px = player.mesh.position.x, pz = player.mesh.position.z;
 
     // Altura: suavizado para que las ondulaciones no produzcan saltos bruscos
-    const groundY = getGroundHeight(px, pz);
+    const groundY = currentGroundY(px, pz);
     player.mesh.position.y += (groundY - player.mesh.position.y) * Math.min(15 * dt, 1);
 
     // Normal por diferencias finitas de la altura (heightfield)
     const e   = 0.7;
-    const dHx = getGroundHeight(px + e, pz) - getGroundHeight(px - e, pz);
-    const dHz = getGroundHeight(px, pz + e) - getGroundHeight(px, pz - e);
+    const dHx = currentGroundY(px + e, pz) - currentGroundY(px - e, pz);
+    const dHz = currentGroundY(px, pz + e) - currentGroundY(px, pz - e);
     _normal.set(-dHx, 2 * e, -dHz).normalize();
 
     // Orientación final = inclinación (up→normal) compuesta con el giro (facing)
@@ -455,8 +575,6 @@ function update(dt) {
     _yawQuat.setFromAxisAngle(_up, player.facing);
     _targetQ.copy(_tiltQuat).multiply(_yawQuat);
     player.mesh.quaternion.slerp(_targetQ, Math.min(10 * dt, 1));
-  } else {
-    player.mesh.rotation.y = player.facing;
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -469,16 +587,33 @@ function update(dt) {
   // Láseres (avance + rebote en muros) y chispas del disparo
   lasers.update(dt);
   sparks.update(dt);
+  blood.update(dt);    // salpicaduras de sangre de golpes melee
+  ship.update(dt, elapsed);   // portal/cristal de maná (solo anima si está visible)
 
-  // Enemigos: persecución/flotación + colisión con láseres (mueren de un tiro)
-  enemies.update(dt, player);
-  enemies.handleLasers(lasers);
-  blood.update(dt);   // salpicaduras de sangre de golpes melee
+  // Cofres recién robados: se hunden/encogen hasta desaparecer
+  for (let i = openingChests.length - 1; i >= 0; i--) {
+    const o = openingChests[i];
+    o.t -= dt;
+    o.mesh.scale.setScalar(Math.max(o.t / 0.45, 0));
+    if (o.t <= 0) { o.mesh.visible = false; openingChests.splice(i, 1); }
+  }
 
-  // Muros que tapan al jugador → semitransparentes (oclusión de cámara).
-  // Apuntamos al torso (no a los pies) para detectar bien lo que cubre.
-  _occTarget.copy(player.mesh.position).add(_occHead);
-  world.updateOcclusion(camera, _occTarget);
+  // Lo siguiente solo aplica dentro de una realidad (no en la nave): enemigos,
+  // oclusión de muros y niebla de guerra/minimapa.
+  if (game.state === 'dungeon') {
+    // Enemigos: persecución/flotación + colisión con láseres (mueren de un tiro)
+    enemies.update(dt, player);
+    enemies.handleLasers(lasers);
+
+    // Muros que tapan al jugador → semitransparentes (oclusión de cámara).
+    // Apuntamos al torso (no a los pies) para detectar bien lo que cubre.
+    _occTarget.copy(player.mesh.position).add(_occHead);
+    world.updateOcclusion(camera, _occTarget);
+
+    // Niebla de guerra: descubre el entorno del jugador, y refresca el minimapa
+    fog.reveal(player.mesh.position.x, player.mesh.position.z, 2);
+    minimap.update(player.mesh.position.x, player.mesh.position.z, player.facing);
+  }
 
   // Sombra sigue al jugador
   lights.dir.target.position.copy(player.mesh.position);
@@ -486,10 +621,6 @@ function update(dt) {
 
   // Rim glow pulsante
   if (player.model) pulseRim(player.model, elapsed);
-
-  // Niebla de guerra: descubre el entorno del jugador, y refresca el minimapa
-  fog.reveal(player.mesh.position.x, player.mesh.position.z, 2);
-  minimap.update(player.mesh.position.x, player.mesh.position.z, player.facing);
 
   // ────────────────────────────────────────────────────────────────────────────
   // ANIMACIONES

@@ -89,11 +89,90 @@
       background: radial-gradient(circle at 35% 30%, #8aa0bd, #3d506e);
       color: #fff; font-size: 11px;
     }
+
+    /* ── Estado del viajero: vida / maná robado / racha de realidades ────── */
+    #stats {
+      position: fixed; top: 52px; left: 18px;
+      display: flex; flex-direction: column; gap: 7px;
+      font-family: 'Orbitron', sans-serif;
+      pointer-events: none; user-select: none;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+    }
+    #hp-hearts { display: flex; gap: 5px; }
+    #hp-hearts .heart {
+      width: 16px; height: 16px; background: #ff5a5a;
+      box-shadow: 0 0 6px rgba(255,90,90,0.75);
+      clip-path: polygon(50% 18%, 61% 4%, 78% 4%, 96% 22%, 96% 42%, 50% 96%, 4% 42%, 4% 22%, 22% 4%, 39% 4%);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    #hp-hearts .heart.empty { background: #3a2230; box-shadow: none; }
+    #mana-hud {
+      font-size: 13px; font-weight: 700; letter-spacing: 1px; color: #d8c4ff;
+    }
+    #mana-hud .mana-icon { color: #9a6bff; text-shadow: 0 0 8px rgba(154,107,255,0.85); }
+    #realities-hud { font-size: 11px; letter-spacing: 1px; color: #7fd8ff; }
+
+    /* ── Mensajes centrales (muerte / escape) ─────────────────────────────── */
+    #message {
+      position: fixed; top: 120px; left: 50%; transform: translateX(-50%);
+      font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 15px;
+      color: #eaf6ff; background: var(--panel); border: 2px solid var(--panel-edge);
+      padding: 10px 24px; border-radius: 12px; max-width: 72vw; text-align: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.4s;
+    }
+    #message.show { opacity: 1; }
+
+    /* ── Pantalla de lore inicial ──────────────────────────────────────────── */
+    #intro {
+      position: fixed; inset: 0; z-index: 20;
+      background: rgba(4, 6, 16, 0.92);
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.5s;
+    }
+    #intro.hidden { opacity: 0; pointer-events: none; }
+    #intro-box {
+      max-width: 540px; margin: 0 24px; padding: 34px 38px; text-align: center;
+      background: var(--panel); border: 2px solid var(--panel-edge); border-radius: 18px;
+      font-family: 'Audiowide', sans-serif; color: #cfe6ff;
+    }
+    #intro-box h1 {
+      font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 26px;
+      letter-spacing: 3px; color: #eaf6ff; margin-bottom: 16px;
+    }
+    #intro-box h1 span { color: var(--cyan); }
+    #intro-box p { font-size: 13px; line-height: 1.7; margin-bottom: 12px; }
+    #intro-box button {
+      margin-top: 10px; padding: 11px 28px; border: none; border-radius: 999px;
+      font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px;
+      color: #06121f; background: var(--cyan); cursor: pointer;
+      box-shadow: 0 4px 16px rgba(67,224,255,0.45);
+    }
   </style>
 </head>
 <body>
   <div id="title">ASTRO<span>DUNGEONS</span></div>
   <div id="controller-status" class="disconnected">⬛ Gamepad: desconectado</div>
+
+  <div id="stats">
+    <div id="hp-hearts">
+      <span class="heart"></span><span class="heart"></span><span class="heart"></span>
+    </div>
+    <div id="mana-hud"><span class="mana-icon">◆</span> <span id="mana-count">0</span> maná robado</div>
+    <div id="realities-hud">Realidad <span id="realities-count">0/5</span></div>
+  </div>
+
+  <div id="message"></div>
+
+  <div id="intro">
+    <div id="intro-box">
+      <h1>ASTRO<span>DUNGEONS</span></h1>
+      <p>Eres un viajero interdimensional varado en tu nave, a la deriva entre realidades.</p>
+      <p>Cada portal te lanza a un mundo distinto. Roba su <b>maná</b> de los cofres ocultos
+         y alcanza el punto de salida antes de que algo te detenga.</p>
+      <p>Si caes en combate, lo pierdes todo y despiertas de nuevo en tu nave.</p>
+      <button id="intro-start">Entrar al portal</button>
+    </div>
+  </div>
 
   <div id="hud">
     <div class="hud-btn"><span class="stick">L</span>Mover</div>
@@ -108,5 +187,10 @@
   </div>
 
   <script type="module" src="/src/main.js"></script>
+  <script>
+    document.getElementById('intro-start').addEventListener('click', () => {
+      document.getElementById('intro').classList.add('hidden');
+    });
+  </script>
 </body>
 </html>

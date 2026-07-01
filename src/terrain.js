@@ -122,5 +122,5 @@ export function createTerrain(scene) {
   ground.receiveShadow = true;
   scene.add(ground);
 
-  return { groundY };
+  return { groundY, mesh: ground };
 }
